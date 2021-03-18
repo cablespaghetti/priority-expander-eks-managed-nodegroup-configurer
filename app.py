@@ -50,6 +50,7 @@ def find_node_group_priority(node_group_name, priority_dict):
                 return priority
 
 
+# Gets the ConfigMap for this app and returns it as a Dictionary
 def get_priority_expander_nodegroup_configuration():
     try:
         configmap = api_instance.read_namespaced_config_map(configmap_name, cluster_autoscaler_namespace)
@@ -68,6 +69,7 @@ def get_priority_expander_nodegroup_configuration():
         return {}
 
 
+# Writes out the finished priority Dictionary to the ConfigMap used by Cluster Autoscaler
 def write_configmap(configuration):
     priority_expander_configuration_yaml = dump(configuration, Dumper=Dumper)
     logging.debug(priority_expander_configuration_yaml)
@@ -76,6 +78,8 @@ def write_configmap(configuration):
         metadata=client.V1ObjectMeta(name=configmap_name),
         data={'priorities': priority_expander_configuration_yaml})
     logging.info(f'Writing cluster-autoscaler-priority-expander ConfigMap to {cluster_autoscaler_namespace}')
+
+    # Either update the ConfigMap or create it if one doesn't exist yet
     configmap_exists = True
     try:
         api_instance.read_namespaced_config_map(configmap_name, cluster_autoscaler_namespace)
@@ -89,17 +93,19 @@ def write_configmap(configuration):
                                                   body=priority_expander_configuration_configmap)
 
 
+# Works out what the lowest priority used is, and sets ".*" as 1 lower than that
 def set_wildcard_priority(configuration):
     priorities_list = list(configuration.keys())
     priorities_list.sort()
     lowest_priority = priorities_list[0]
-    if lowest_priority > 2:
+    if lowest_priority >= 1:
         configuration[lowest_priority - 1] = ['.*']
         logging.info(f'Lowest priority is {lowest_priority}, setting .* priority to {lowest_priority - 1}')
     else:
-        logging.warning('Lowest priority is less than 2. Not setting .* priority.')
+        logging.warning('Lowest priority is 1 or less. Not setting .* priority. All priorities must be > 0.')
 
 
+# Read in the source ConfigMap
 connect_to_kubernetes()
 api_instance = client.CoreV1Api()
 priorities = get_priority_expander_nodegroup_configuration()
@@ -107,23 +113,36 @@ if not priorities:
     logging.error('Failed to get priorities from ConfigMap')
     sys.exit(1)
 
+# Get the managed node groups for our EKS cluster
 eks_client = boto3.client('eks')
 node_groups = eks_client.list_nodegroups(clusterName=cluster_name)['nodegroups']
 
+# Figure out the highest priority matched by each node group (if any)
+# Get the list of ASGs for that node group
+# Make a Dictionary of priority: list of asg names
 priority_expander_configuration = {}
 for node_group in node_groups:
     node_group_priority = find_node_group_priority(node_group, priorities)
+
+    # Get the list of node groups we've already found for this node group's priority (if any)
     priority_node_group_list = []
     if node_group_priority in priority_expander_configuration:
         priority_node_group_list = priority_expander_configuration[node_group_priority]
 
+    # Get the ASGs for this node group
     auto_scaling_groups = \
         eks_client.describe_nodegroup(clusterName=cluster_name, nodegroupName=node_group)['nodegroup']['resources'][
             'autoScalingGroups']
+
+    # For each ASG, add it to the list of ASGs for this priority
     for auto_scaling_group in auto_scaling_groups:
         priority_node_group_list.append(auto_scaling_group['name'])
+
+    # Write the node group list for the priority to the Dictionary
     priority_expander_configuration[node_group_priority] = priority_node_group_list
 
+# Work out what so set the .* priority to
 set_wildcard_priority(priority_expander_configuration)
 
+# Write the ConfigMap used by cluster autoscaler to Kubernetes
 write_configmap(priority_expander_configuration)
