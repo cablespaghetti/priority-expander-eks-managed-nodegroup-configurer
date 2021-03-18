@@ -1,0 +1,10 @@
+image:
+  repository: priority-expander-configurer
+  tag: 1.0.0
+
+env:
+  CLUSTER_NAME: mycluster
+  AWS_DEFAULT_REGION: us-east-1
+  CLUSTER_AUTOSCALER_NAMESPACE: kube-system
+
+annotations: {}
