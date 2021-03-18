@@ -2,9 +2,9 @@ import logging
 import os
 import sys
 
+import re
 from kubernetes import client, config
 import boto3
-import re
 from yaml import load, dump
 
 try:
@@ -46,8 +46,9 @@ def find_node_group_priority(node_group_name, priority_dict):
     for priority in priorities_list:
         for regex in priority_dict[priority]:
             if re.match(regex, node_group_name):
-                logging.info(f'{node_group} matched {regex} for priority {priority}')
+                logging.info(f'{node_group_name} matched {regex} for priority {priority}')
                 return priority
+    return None
 
 
 # Gets the ConfigMap for this app and returns it as a Dictionary
@@ -64,29 +65,28 @@ def get_priority_expander_nodegroup_configuration():
         logging.debug(priorities_yaml)
         priority_dict = load(priorities_yaml, Loader=Loader)
         return priority_dict
-    else:
-        logging.error(f'{configmap_name} ConfigMap in {cluster_autoscaler_namespace} has no priorities')
-        return {}
+    logging.error(f'{configmap_name} ConfigMap in {cluster_autoscaler_namespace} has no priorities')
+    return {}
 
 
 # Writes out the finished priority Dictionary to the ConfigMap used by Cluster Autoscaler
 def write_configmap(configuration):
     priority_expander_configuration_yaml = dump(configuration, Dumper=Dumper)
     logging.debug(priority_expander_configuration_yaml)
-    configmap_name = 'cluster-autoscaler-priority-expander'
+    configmap = 'cluster-autoscaler-priority-expander'
     priority_expander_configuration_configmap = client.V1ConfigMap(
-        metadata=client.V1ObjectMeta(name=configmap_name),
+        metadata=client.V1ObjectMeta(name=configmap),
         data={'priorities': priority_expander_configuration_yaml})
     logging.info(f'Writing cluster-autoscaler-priority-expander ConfigMap to {cluster_autoscaler_namespace}')
 
     # Either update the ConfigMap or create it if one doesn't exist yet
     configmap_exists = True
     try:
-        api_instance.read_namespaced_config_map(configmap_name, cluster_autoscaler_namespace)
+        api_instance.read_namespaced_config_map(configmap, cluster_autoscaler_namespace)
     except client.exceptions.ApiException:
         configmap_exists = False
     if configmap_exists:
-        api_instance.replace_namespaced_config_map(name=configmap_name, namespace=cluster_autoscaler_namespace,
+        api_instance.replace_namespaced_config_map(name=configmap, namespace=cluster_autoscaler_namespace,
                                                    body=priority_expander_configuration_configmap)
     else:
         api_instance.create_namespaced_config_map(namespace=cluster_autoscaler_namespace,
@@ -123,11 +123,12 @@ node_groups = eks_client.list_nodegroups(clusterName=cluster_name)['nodegroups']
 priority_expander_configuration = {}
 for node_group in node_groups:
     node_group_priority = find_node_group_priority(node_group, priorities)
+    if not node_group_priority:
+        logging.warning(f'Node Group {node_group} matched no priority')
+        continue
 
     # Get the list of node groups we've already found for this node group's priority (if any)
-    priority_node_group_list = []
-    if node_group_priority in priority_expander_configuration:
-        priority_node_group_list = priority_expander_configuration[node_group_priority]
+    priority_node_group_list = priority_expander_configuration.get(node_group_priority, [])
 
     # Get the ASGs for this node group
     auto_scaling_groups = \
