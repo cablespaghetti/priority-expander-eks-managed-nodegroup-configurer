@@ -4,10 +4,10 @@ metadata:
   name: {{ .Release.Name }}
 data:
   priorities: |-
-    10:
+    20:
       - .*
     30:
       - .*spot.*
-    50:
+    40:
       - .*arm64.*
 
