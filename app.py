@@ -86,8 +86,8 @@ def write_configmap(configuration):
     except client.exceptions.ApiException:
         configmap_exists = False
     if configmap_exists:
-        api_instance.replace_namespaced_config_map(name=configmap, namespace=cluster_autoscaler_namespace,
-                                                   body=priority_expander_configuration_configmap)
+        api_instance.patch_namespaced_config_map(name=configmap, namespace=cluster_autoscaler_namespace,
+                                                 body=priority_expander_configuration_configmap)
     else:
         api_instance.create_namespaced_config_map(namespace=cluster_autoscaler_namespace,
                                                   body=priority_expander_configuration_configmap)
