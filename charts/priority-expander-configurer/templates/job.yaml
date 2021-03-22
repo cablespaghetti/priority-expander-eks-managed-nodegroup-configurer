@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-{{ now | unixEpoch }}
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      {{- with .Values.annotations }}
+      metadata:
+        annotations:
+        {{- toYaml . | nindent 12 }}
+      {{- end }}
+      serviceAccountName: {{ .Release.Name }}
+      restartPolicy: OnFailure
+      containers:
+      - name: priority-expander-configurer
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        env:
+        {{- range $key, $value := .Values.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        - name: CONFIGMAP_NAME
+          value: {{ .Release.Name | quote }}
+  
