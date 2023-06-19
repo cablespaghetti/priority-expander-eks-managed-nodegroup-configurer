@@ -1,0 +1,18 @@
+# catalog-info.yml
+# This file contains metadata for backstage
+# Read more about available fields and annotations:
+# https://github.com/tradeshift/backstage
+#
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: priority-expander-eks-managed-nodegroup-configurer
+  description: |
+    Generates the cluster-autoscaler-priority-expander ConfigMap expected by the Kubernetes Cluster Autoscaler's priority expander containing the Auto Scaling Group names rather than the names of the node groups.
+  annotations:
+    github.com/project-slug: Tradeshift/priority-expander-eks-managed-nodegroup-configurer  # GitHub project name
+
+spec:
+  type: other
+  owner: platform-ops
+  lifecycle: experimental
